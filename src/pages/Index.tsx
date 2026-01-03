@@ -33,6 +33,7 @@ interface Tenant {
   email: string;
   access: 'full' | 'limited' | 'view';
   status: 'active' | 'inactive';
+  allowedDevices: string[];
 }
 
 interface Contract {
@@ -60,9 +61,9 @@ export default function Index() {
   ]);
 
   const [tenants, setTenants] = useState<Tenant[]>([
-    { id: '1', name: 'Иванов Иван', email: 'ivanov@mail.ru', access: 'full', status: 'active' },
-    { id: '2', name: 'Петрова Мария', email: 'petrova@mail.ru', access: 'limited', status: 'active' },
-    { id: '3', name: 'Сидоров Петр', email: 'sidorov@mail.ru', access: 'view', status: 'inactive' },
+    { id: '1', name: 'Иванов Иван', email: 'ivanov@mail.ru', access: 'full', status: 'active', allowedDevices: ['1', '2', '3'] },
+    { id: '2', name: 'Петрова Мария', email: 'petrova@mail.ru', access: 'limited', status: 'active', allowedDevices: ['1'] },
+    { id: '3', name: 'Сидоров Петр', email: 'sidorov@mail.ru', access: 'view', status: 'inactive', allowedDevices: [] },
   ]);
 
   const [contracts, setContracts] = useState<Contract[]>([
@@ -80,6 +81,8 @@ export default function Index() {
   const [newDevice, setNewDevice] = useState({ name: '', type: 'tv' as const });
   const [newTenant, setNewTenant] = useState({ name: '', email: '', access: 'limited' as const });
   const [newContract, setNewContract] = useState({ tenantId: '', startDate: '', endDate: '' });
+  const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false);
+  const [selectedTenant, setSelectedTenant] = useState<Tenant | null>(null);
 
   const toggleDevicePower = (deviceId: string) => {
     setDevices(devices.map(d => {
@@ -165,11 +168,33 @@ export default function Index() {
     const tenant: Tenant = {
       id: Date.now().toString(),
       ...newTenant,
-      status: 'active'
+      status: 'active',
+      allowedDevices: []
     };
     setTenants([...tenants, tenant]);
     setNewTenant({ name: '', email: '', access: 'limited' });
     toast.success('Жилец добавлен');
+  };
+
+  const openPermissionsDialog = (tenant: Tenant) => {
+    setSelectedTenant(tenant);
+    setPermissionsDialogOpen(true);
+  };
+
+  const toggleDevicePermission = (deviceId: string) => {
+    if (!selectedTenant) return;
+    
+    setTenants(tenants.map(t => {
+      if (t.id === selectedTenant.id) {
+        const allowed = t.allowedDevices.includes(deviceId)
+          ? t.allowedDevices.filter(id => id !== deviceId)
+          : [...t.allowedDevices, deviceId];
+        const updated = { ...t, allowedDevices: allowed };
+        setSelectedTenant(updated);
+        return updated;
+      }
+      return t;
+    }));
   };
 
   const addContract = () => {
@@ -393,13 +418,26 @@ export default function Index() {
                       <p className="text-sm text-muted-foreground">{tenant.email}</p>
                     </div>
                   </div>
-                  <div className="flex gap-2">
-                    <Badge variant={tenant.status === 'active' ? 'default' : 'secondary'}>
-                      {tenant.status === 'active' ? 'Активен' : 'Неактивен'}
-                    </Badge>
-                    <Badge variant="outline">
-                      {tenant.access === 'full' ? 'Полный доступ' : tenant.access === 'limited' ? 'Ограниченный' : 'Просмотр'}
-                    </Badge>
+                  <div className="space-y-3">
+                    <div className="flex gap-2">
+                      <Badge variant={tenant.status === 'active' ? 'default' : 'secondary'}>
+                        {tenant.status === 'active' ? 'Активен' : 'Неактивен'}
+                      </Badge>
+                      <Badge variant="outline">
+                        {tenant.access === 'full' ? 'Полный доступ' : tenant.access === 'limited' ? 'Ограниченный' : 'Просмотр'}
+                      </Badge>
+                    </div>
+                    <div className="flex items-center justify-between pt-2 border-t border-border/50">
+                      <span className="text-sm text-muted-foreground">Устройства: {tenant.allowedDevices.length}</span>
+                      <Button 
+                        size="sm" 
+                        variant="outline"
+                        onClick={() => openPermissionsDialog(tenant)}
+                      >
+                        <Icon name="Settings" size={14} className="mr-2" />
+                        Права
+                      </Button>
+                    </div>
                   </div>
                 </Card>
               ))}
@@ -489,6 +527,59 @@ export default function Index() {
             </Card>
           </TabsContent>
         </Tabs>
+
+        <Dialog open={permissionsDialogOpen} onOpenChange={setPermissionsDialogOpen}>
+          <DialogContent className="glass max-w-2xl">
+            <DialogHeader>
+              <DialogTitle className="text-2xl font-heading flex items-center gap-2">
+                <Icon name="Shield" size={24} />
+                Права доступа: {selectedTenant?.name}
+              </DialogTitle>
+              <DialogDescription>
+                Выберите устройства, которыми может управлять жилец
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+              {devices.map(device => {
+                const isAllowed = selectedTenant?.allowedDevices.includes(device.id) || false;
+                return (
+                  <div 
+                    key={device.id} 
+                    className="flex items-center justify-between p-4 rounded-lg bg-card/50 border border-border/50 hover-scale"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${device.status === 'online' ? 'bg-accent/20' : 'bg-muted/20'}`}>
+                        <Icon name="Tv" size={20} className={device.status === 'online' ? 'text-accent' : 'text-muted-foreground'} />
+                      </div>
+                      <div>
+                        <p className="font-semibold">{device.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {device.status === 'online' ? 'Онлайн' : 'Офлайн'}
+                        </p>
+                      </div>
+                    </div>
+                    <Switch
+                      checked={isAllowed}
+                      onCheckedChange={() => toggleDevicePermission(device.id)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex justify-end pt-4 border-t border-border/50">
+              <Button 
+                onClick={() => {
+                  setPermissionsDialogOpen(false);
+                  toast.success('Права доступа обновлены');
+                }}
+                className="gradient-primary"
+              >
+                <Icon name="Check" size={18} className="mr-2" />
+                Готово
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
